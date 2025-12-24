@@ -14,15 +14,26 @@ npm install
 3. Run in development:
 
 ```bash
+# backend
+npm run dev
+
+# frontend (in another terminal)
+cd client
+npm install
 npm run dev
 ```
 
-4. Open the client at `client/index.html` (or serve it) and use the API at `http://localhost:4000/api`.
+4. Build for production and serve from Express:
+
+```bash
+cd client
+npm run build
+# then start server (it will serve client/dist)
+npm start
+```
 
 Notes
 
 - Backend: Node.js + Express + MongoDB (mongoose).
 - Storage: AWS S3 for music files.
-- Frontend: Minimal HTML/JS at `client/` (replace with React later if desired).
-
-Professional music &amp; podcast streaming platform
+- Frontend: React + Vite in `client/` (production build served from `client/dist`).

@@ -8,6 +8,16 @@ const jwt = require('jsonwebtoken');
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
+const express = require('express');
+const multer = require('multer');
+const { s3, BUCKET } = require('../config/aws');
+const { v4: uuidv4 } = require('uuid');
+const Track = require('../models/Track');
+const jwt = require('jsonwebtoken');
+
+const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage() });
+
 function auth(req, res, next) {
   const header = req.headers.authorization;
   if (!header) return res.status(401).json({ error: 'Unauthorized' });
@@ -40,14 +50,41 @@ router.get('/', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// Stream with HTTP Range support for seeking (works with HTML5 audio)
 router.get('/:id/stream', async (req, res, next) => {
   try {
     const track = await Track.findById(req.params.id);
     if (!track) return res.status(404).json({ error: 'Not found' });
-    const params = { Bucket: BUCKET, Key: track.s3Key };
-    const s3Stream = s3.getObject(params).createReadStream();
-    res.setHeader('Content-Type', track.mimeType || 'audio/mpeg');
-    s3Stream.pipe(res).on('error', next);
+
+    // Get object metadata to know total size
+    const head = await s3.headObject({ Bucket: BUCKET, Key: track.s3Key }).promise();
+    const total = head.ContentLength;
+    const contentType = track.mimeType || head.ContentType || 'audio/mpeg';
+
+    const range = req.headers.range;
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
+      const chunkSize = (end - start) + 1;
+
+      const s3Stream = s3.getObject({ Bucket: BUCKET, Key: track.s3Key, Range: `bytes=${start}-${end}` }).createReadStream();
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${total}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunkSize,
+        'Content-Type': contentType,
+      });
+      s3Stream.pipe(res).on('error', next);
+    } else {
+      const s3Stream = s3.getObject({ Bucket: BUCKET, Key: track.s3Key }).createReadStream();
+      res.writeHead(200, {
+        'Content-Length': total,
+        'Content-Type': contentType,
+        'Accept-Ranges': 'bytes',
+      });
+      s3Stream.pipe(res).on('error', next);
+    }
   } catch (err) { next(err); }
 });
 
